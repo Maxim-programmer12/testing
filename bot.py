@@ -5,7 +5,6 @@ from threading import Timer
 import db
 from dotenv import load_dotenv
 from os import getenv
-from os.path import join
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -74,14 +73,18 @@ def send_voting_markup(chat_id, vote_type, exclude_name=None):
     alive = db.get_all_alive(chat_id)
     markup = types.InlineKeyboardMarkup()
     for name in alive:
+
         if name == exclude_name:
             continue
+
         data = f"vote|{vote_type}|{chat_id}|{name}"
         markup.add(types.InlineKeyboardButton(text=name, callback_data=data))
+
     return markup
 
 def game_loop_step(chat_id):
     state = get_game_state(chat_id)
+
     if not state["game"]:
         return
 
@@ -91,28 +94,35 @@ def game_loop_step(chat_id):
     bot.send_message(chat_id, msg)
 
     kicked_afk = db.clear_round(chat_id, reset_dead=False, night=night)
+
     if kicked_afk:
         bot.send_message(chat_id, f"Выгнаны за АФК: {', '.join(kicked_afk)}")
 
     winner = db.check_winner(chat_id)
+
     if winner:
-        bot.send_message(chat_id, f"Игра окончена: победили {winner}")
+        bot.send_message(chat_id, f"Игра окончена: победили(-а) {winner}")
         update_game_state(chat_id, "game", False)
         
         img_path = "mafia.jpg" if winner == "Мафия" or winner == "Маньяк" else "citizen.jpg"
+
         try:
             with open(PICTURE_DIR / img_path, 'rb') as photo:
                 bot.send_photo(chat_id, photo)
+
         except Exception:
             pass 
 
         players = db.get_players_roles(chat_id)
         for pid, name, role in players:
             won = False
+
             if winner == "Мафия" and role == "mafia": 
                 won = True
+
             if winner == "Горожане" and role not in ["mafia", "maniac"]: 
                 won = True
+
             if winner == "Маньяк" and role == "maniac": 
                 won = True
             
@@ -133,7 +143,7 @@ def game_loop_step(chat_id):
     timer_seconds = settings[0]
 
     if night:
-        bot.send_message(chat_id, "Город засыпает. Наступила ночь!")
+        bot.send_message(chat_id, "Город засыпает. Наступила... ночь!")
         autoplay_bots(chat_id, True)
         
         players = db.get_players_roles(chat_id)
@@ -156,12 +166,14 @@ def game_loop_step(chat_id):
                 except Exception:
                     pass
     else:
-        bot.send_message(chat_id, f"Наступил день! Обсуждение {timer_seconds} сек. Голосуйте!")
+        bot.send_message(chat_id, f"Наступил день. Обсуждение {timer_seconds} сек. Голосуйте!")
         bot.send_message(chat_id, "Голосование!", reply_markup=send_voting_markup(chat_id, "citizen"))
+
         autoplay_bots(chat_id, False)
 
     t = Timer(timer_seconds, game_loop_step, args=[chat_id])
     update_game_state(chat_id, "timer", t)
+
     t.start()
 
 
@@ -173,23 +185,28 @@ def callback_worker(call):
         user_id = call.from_user.id
         
         success = db.cast_vote(vote_type, target, user_id, game_chat_id)
+
         if success:
             print(f"[PLAYER] {call.from_user.first_name} voted {vote_type} -> {target}")
         
         if success:
             bot.answer_callback_query(call.id, "Голос принят!")
+
             if vote_type == "citizen":
                  bot.send_message(game_chat_id, f"{call.from_user.first_name} проголосовал против {target}")
+
             elif vote_type == "sheriff":
                 target_role = "citizen" 
                 players = db.get_players_roles(game_chat_id)
+
                 for _, name, role in players:
                     if name == target:
                         is_mafia = (role == "mafia")
                         bot.send_message(user_id, f"Проверка {target}: {'МАФИЯ' if is_mafia else 'Не мафия'}")
+
                         break
         else:
-            bot.answer_callback_query(call.id, "Нельзя голосовать (вы мертвы/нет прав/уже голосовали)", show_alert=True)
+            bot.answer_callback_query(call.id, "Нельзя голосовать! (вы мертвы/нет прав/уже голосовали)", show_alert=True)
             
     except Exception as e:
         print(f"Callback error: {e}")
@@ -202,29 +219,36 @@ def start_command(message: types.Message):
 @bot.message_handler(commands=['reg'], chat_types=['group', 'supergroup'])
 def reg_in_group(message: types.Message):
     chat_id = message.chat.id
+
     if get_game_state(chat_id)["game"]:
         bot.reply_to(message, "Игра уже идёт! Нельзя зарегистрироваться.")
         return
+    
     db.insert_player(message.from_user.id, message.from_user.first_name, message.chat.id)
     bot.reply_to(message, "Вы в игре!")
 
 @bot.message_handler(commands=['stats'], chat_types=['group', 'supergroup'])
 def stats_command(message: types.Message):
     stats = db.get_stats()
-    text = "Топ игроков:\n"
+    text = "Топ игроков\n"
+
     for name, games_cnt, wins in stats:
-        text += f"{name}: Игр: {games_cnt}, Побед: {wins}\n"
+        text += f"{name} -> Игр: {games_cnt}, Побед: {wins}\n"
+
     bot.send_message(message.chat.id, text)
 
 @bot.message_handler(commands=['config'], chat_types=['group', 'supergroup'])
 def config_command(message: types.Message):
     args = message.text.split()
     chat_id = message.chat.id
+
     try:
         timer = int(args[1]) if len(args) > 1 else None
         mafia = int(args[2]) if len(args) > 2 else None
+
         db.update_settings(chat_id, timer, mafia)
         bot.send_message(chat_id, f"Настройки обновлены: Таймер={timer or 'Без изм.'}, Мафия={mafia or 'Без изм.'}")
+
     except ValueError:
         bot.send_message(chat_id, "Использование: /config [секунды] [кол-во мафии]")
 
@@ -239,9 +263,11 @@ def game_start(message: types.Message):
 
     try:
         member = bot.get_chat_member(chat_id, message.from_user.id)
+
         if member.status not in ["administrator", "creator"]:
-            bot.send_message(chat_id, "Только админ может запустить игру!")
+            bot.send_message(chat_id, "Только админ/владелец может запустить игру!")
             return
+        
     except Exception:
         pass
 
@@ -253,10 +279,13 @@ def game_start(message: types.Message):
     players_count = db.players_amount(chat_id)
     if players_count < 5:
         bot.send_message(chat_id, "Добавляю ботов...")
+
         bot_names = ["Вася", "Петя", "Коля", "Света", "Оля", "Катя", "Дима", "Саша", "Лена", "Маша", "Андрей"]
         chosen = sample(bot_names, 5)
+
         for i, name in enumerate(chosen):
             db.insert_player(i, name, chat_id)
+
             sleep(0.1)
     
     db.set_roles(chat_id)
@@ -265,11 +294,14 @@ def game_start(message: types.Message):
     mafia_usernames = db.get_mafia_usernames(chat_id)
     
     for player_id, _, role in players_roles:
+
         if player_id >= 5:
             try:
                 bot.send_message(player_id, f"Ваша роль: {role}")
+
                 if role == 'mafia':
                     bot.send_message(player_id, f"Мафия: {mafia_usernames}")
+
                 print(f"[ROLE] User {player_id} is {role}")
             except:
                 bot.send_message(chat_id, f"Откройте ЛС с ботом для получения роли! (@{bot.get_me().username})")
@@ -278,6 +310,7 @@ def game_start(message: types.Message):
     
     t = Timer(10, game_loop_step, args=[chat_id])
     update_game_state(chat_id, "timer", t)
+
     t.start()
 
 
