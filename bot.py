@@ -3,14 +3,11 @@ from time import sleep
 from random import choice, sample
 from threading import Timer
 import db
-from dotenv import load_dotenv
 from os import getenv
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 PICTURE_DIR = BASE_DIR / "pictures"
-
-load_dotenv()
 
 db.init_db()
 
