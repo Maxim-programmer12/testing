@@ -10,19 +10,22 @@ def connect(func):
     def wrapper(*args, **kwargs):
         conn = sqlite3.connect(str(DB_PATH))
         cur = conn.cursor()
+
         result = None
+
         try:
             result = func(cur, *args, **kwargs)
             conn.commit()
+
         except Exception:
             conn.rollback()
             print(f"[ERROR]: {func.__name__}: {print_exc()}")
+
         finally:
             conn.close()
         return result
     return wrapper
 
- 
 @connect
 def init_db(cur):
     cur.execute("""
@@ -76,22 +79,26 @@ def insert_player(cur, player_id: int, username: str, chat_id: int) -> None:
 @connect
 def players_amount(cur, chat_id: int) -> int:
     cur.execute("SELECT COUNT(*) FROM players WHERE chat_id=?", (chat_id,))
+
     return cur.fetchone()[0]
 
 @connect
 def get_mafia_usernames(cur, chat_id: int) -> str:
     cur.execute("SELECT username FROM players WHERE role = 'mafia' AND dead = 0 AND chat_id=?", (chat_id,))
     rows = cur.fetchall()
+
     return "\n".join(row[0] for row in rows)
 
 @connect
 def get_players_roles(cur, chat_id: int) -> list:
     cur.execute("SELECT player_id, username, role FROM players WHERE chat_id=?", (chat_id,))
+
     return cur.fetchall()
 
 @connect
 def get_all_alive(cur, chat_id: int) -> list:
     cur.execute("SELECT username FROM players WHERE dead=0 AND chat_id=?", (chat_id,))
+
     return [row[0] for row in cur.fetchall()] 
 
 @connect
@@ -99,6 +106,7 @@ def set_roles(cur, chat_id: int) -> None:
     cur.execute("SELECT player_id FROM players WHERE chat_id=? ORDER BY player_id", (chat_id,))
     players_rows = cur.fetchall()
     n = len(players_rows)
+
     if n == 0:
         return 
     
@@ -109,14 +117,18 @@ def set_roles(cur, chat_id: int) -> None:
     roles = ["mafia"] * mafia_count
     
     special_roles = []
+
     if n >= 5: 
         special_roles.append("doctor")
+
     if n >= 6: 
         special_roles.append("sheriff")
+
     if n >= 7: 
         special_roles.append("maniac")
 
     assigned_count = len(roles) + len(special_roles)
+
     if assigned_count > n:
         special_roles = special_roles[:n-len(roles)]
     
@@ -131,12 +143,14 @@ def set_roles(cur, chat_id: int) -> None:
 @connect
 def user_exists(cur, player_id: int, chat_id: int) -> bool:
     cur.execute("SELECT 1 FROM players WHERE player_id=? AND chat_id=?", (player_id, chat_id))
+
     return cur.fetchone() is not None
 
 @connect
 def cast_vote(cur, vote_type: str, target_name: str, voted_id: int, chat_id: int) -> bool:
     cur.execute("SELECT dead, voted, role FROM players WHERE player_id = ? AND chat_id=?", (voted_id, chat_id))
     row = cur.fetchone()
+
     if not row: 
         return False
     dead, voted, role = row 
@@ -146,10 +160,13 @@ def cast_vote(cur, vote_type: str, target_name: str, voted_id: int, chat_id: int
 
     if vote_type == "mafia" and role != "mafia": 
         return False
+    
     if vote_type == "doctor" and role != "doctor": 
         return False
+    
     if vote_type == "sheriff" and role != "sheriff": 
         return False
+    
     if vote_type == "maniac" and role != "maniac": 
         return False
 
@@ -159,6 +176,7 @@ def cast_vote(cur, vote_type: str, target_name: str, voted_id: int, chat_id: int
     
     cur.execute("INSERT INTO votes (vote_type, target_name, voted_id, chat_id) VALUES (?, ?, ?, ?)", 
                 (vote_type, target_name, voted_id, chat_id))
+    
     cur.execute("UPDATE players SET voted = 1 WHERE player_id = ? AND chat_id=?", (voted_id, chat_id))
     return True 
 
@@ -190,6 +208,7 @@ def night_resolution(cur, chat_id: int) -> str:
             dead_list.append(maniac_target)
     
     dead_list = list(set(dead_list))
+
     for username in dead_list:
         cur.execute("UPDATE players SET dead = 1 WHERE username = ? AND chat_id=?", (username, chat_id))
     
@@ -206,10 +225,12 @@ def citizen_kill(cur, chat_id: int) -> str:
         LIMIT 2
     """, (chat_id,))
     rows = cur.fetchall()
+
     if not rows: 
         return "Никого"
     
     top = rows[0]
+
     if len(rows) > 1 and rows[1][1] == top[1]: 
         return "Никого"
 
@@ -220,8 +241,10 @@ def citizen_kill(cur, chat_id: int) -> str:
 def check_winner(cur, chat_id: int) -> str | None:
     cur.execute("SELECT COUNT(*) FROM players WHERE role='mafia' AND dead=0 AND chat_id=?", (chat_id,))
     mafia_alive = cur.fetchone()[0]
+
     cur.execute("SELECT COUNT(*) FROM players WHERE role='maniac' AND dead=0 AND chat_id=?", (chat_id,))
     maniac_alive = cur.fetchone()[0]
+
     cur.execute("SELECT COUNT(*) FROM players WHERE role!='mafia' AND role!='maniac' AND dead=0 AND chat_id=?", (chat_id,))
     citizen_alive = cur.fetchone()[0]
 
@@ -239,15 +262,19 @@ def check_winner(cur, chat_id: int) -> str | None:
 @connect
 def clear_round(cur, chat_id: int, reset_dead: bool = False, night: bool = None) -> list:
     kicked_list = []
+
     if not reset_dead:
         query = "SELECT username, afk_count FROM players WHERE voted=0 AND dead=0 AND chat_id=? AND player_id >= 5"
+        
         if night:
             query = "SELECT username, afk_count FROM players WHERE voted=0 AND dead=0 AND chat_id=? AND player_id >= 5 AND role != 'citizen'"
 
         cur.execute(query, (chat_id,))
         afk_players = cur.fetchall()
+        
         for username, count in afk_players:
             new_count = count + 1
+            
             if new_count >= 2:
                 cur.execute("UPDATE players SET dead=1 WHERE username=? AND chat_id=?", (username, chat_id))
                 kicked_list.append(username)
@@ -266,18 +293,21 @@ def clear_round(cur, chat_id: int, reset_dead: bool = False, night: bool = None)
 def add_stats(cur, username: str, user_id: int, win: bool):
     cur.execute("INSERT OR IGNORE INTO stats(user_id, username) VALUES(?, ?)", (user_id, username))
     cur.execute("UPDATE stats SET games = games + 1 WHERE user_id=?", (user_id,))
+    
     if win:
         cur.execute("UPDATE stats SET wins = wins + 1 WHERE user_id=?", (user_id,))
 
 @connect
 def get_stats(cur) -> list:
     cur.execute("SELECT username, games, wins FROM stats ORDER BY wins DESC LIMIT 10")
+    
     return cur.fetchall()
 
 @connect
 def get_settings(cur, chat_id: int) -> tuple:
     cur.execute("SELECT timer_seconds, mafia_count FROM settings WHERE chat_id=?", (chat_id,))
     res = cur.fetchone()
+    
     if not res:
         cur.execute("INSERT INTO settings(chat_id) VALUES(?)", (chat_id,))
         return (30, 1)
@@ -288,6 +318,7 @@ def update_settings(cur, chat_id: int, timer: int = None, mafia: int = None):
     if timer:
         cur.execute("INSERT OR REPLACE INTO settings(chat_id, timer_seconds, mafia_count) VALUES (?, ?, COALESCE((SELECT mafia_count FROM settings WHERE chat_id=?), 1))", (chat_id, timer, chat_id)) 
         cur.execute("UPDATE settings SET timer_seconds=? WHERE chat_id=?", (timer, chat_id))
+    
     if mafia:
         cur.execute("UPDATE settings SET mafia_count=? WHERE chat_id=?", (mafia, chat_id))
 
