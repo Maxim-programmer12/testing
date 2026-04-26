@@ -11,6 +11,7 @@ BASE_DIR = Path(__file__).resolve().parent
 PICTURE_DIR = BASE_DIR / "pictures"
 
 load_dotenv()
+
 db.init_db()
 
 TOKEN = getenv("TOKEN")
@@ -24,6 +25,7 @@ def get_game_state(chat_id):
 def update_game_state(chat_id, key, value):
     if chat_id not in games:
         games[chat_id] = {"game": False, "night": False, "timer": None}
+        
     games[chat_id][key] = value
 
 def get_killed(chat_id, night_flag: bool) -> str:
@@ -39,15 +41,16 @@ def autoplay_bots(chat_id, night: bool):
     alive_usernames = db.get_all_alive(chat_id) or []
     
     for player_id, username, role in players_roles:
-
         if player_id >= 5: 
             continue
+
         if username not in alive_usernames: 
             continue
-        
         targets = [u for u in alive_usernames if u != username]
+
         if not targets: 
             continue
+
         target = choice(targets)
         
         if not night:
@@ -57,13 +60,16 @@ def autoplay_bots(chat_id, night: bool):
             if role == "mafia":
                 db.cast_vote("mafia", target, player_id, chat_id)
                 print(f"[BOT] {username} (Role: {role}) voting 'mafia' -> {target}")
+
             elif role == "doctor":
                 heal_target = choice(alive_usernames)
                 db.cast_vote("doctor", heal_target, player_id, chat_id)
                 print(f"[BOT] {username} (Role: {role}) voting 'doctor' -> {heal_target}")
+
             elif role == "sheriff":
                 db.cast_vote("sheriff", target, player_id, chat_id)
                 print(f"[BOT] {username} (Role: {role}) voting 'sheriff' -> {target}")
+
             elif role == "maniac":
                 db.cast_vote("maniac", target, player_id, chat_id)
                 print(f"[BOT] {username} (Role: {role}) voting 'maniac' -> {target}")
@@ -72,8 +78,8 @@ def autoplay_bots(chat_id, night: bool):
 def send_voting_markup(chat_id, vote_type, exclude_name=None):
     alive = db.get_all_alive(chat_id)
     markup = types.InlineKeyboardMarkup()
-    for name in alive:
 
+    for name in alive:
         if name == exclude_name:
             continue
 
@@ -89,7 +95,6 @@ def game_loop_step(chat_id):
         return
 
     night = state["night"]
-    
     msg = get_killed(chat_id, night)
     bot.send_message(chat_id, msg)
 
@@ -97,7 +102,6 @@ def game_loop_step(chat_id):
 
     if kicked_afk:
         bot.send_message(chat_id, f"Выгнаны за АФК: {', '.join(kicked_afk)}")
-
     winner = db.check_winner(chat_id)
 
     if winner:
@@ -131,10 +135,9 @@ def game_loop_step(chat_id):
 
         db.clear_round(chat_id, reset_dead=True)
         return
-
+    
     night = not night
     update_game_state(chat_id, "night", night)
-    
     alive = db.get_all_alive(chat_id)
     alive_str = "\n".join(alive) if alive else "никого"
     bot.send_message(chat_id, f"В игре:\n{alive_str}")
@@ -147,11 +150,14 @@ def game_loop_step(chat_id):
         autoplay_bots(chat_id, True)
         
         players = db.get_players_roles(chat_id)
+
         for pid, name, role in players:
             if pid < 5: 
                 continue
+
             if name not in alive:
                 continue
+
             if role in ["mafia", "doctor", "sheriff", "maniac"]:
                 try:
                     action_name = {
@@ -163,6 +169,7 @@ def game_loop_step(chat_id):
                     exclude = name if role != "doctor" else None
                     bot.send_message(pid, f"Ваша роль: {role}. {action_name[role]}", 
                                      reply_markup=send_voting_markup(chat_id, role, exclude))
+                    
                 except Exception:
                     pass
     else:
@@ -175,7 +182,6 @@ def game_loop_step(chat_id):
     update_game_state(chat_id, "timer", t)
 
     t.start()
-
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('vote'))
 def callback_worker(call):
@@ -196,14 +202,12 @@ def callback_worker(call):
                  bot.send_message(game_chat_id, f"{call.from_user.first_name} проголосовал против {target}")
 
             elif vote_type == "sheriff":
-                target_role = "citizen" 
                 players = db.get_players_roles(game_chat_id)
 
                 for _, name, role in players:
                     if name == target:
                         is_mafia = (role == "mafia")
                         bot.send_message(user_id, f"Проверка {target}: {'МАФИЯ' if is_mafia else 'Не мафия'}")
-
                         break
         else:
             bot.answer_callback_query(call.id, "Нельзя голосовать! (вы мертвы/нет прав/уже голосовали)", show_alert=True)
@@ -275,8 +279,8 @@ def game_start(message: types.Message):
     update_game_state(chat_id, "night", False)
 
     db.clear_round(chat_id, reset_dead=True)
-
     players_count = db.players_amount(chat_id)
+
     if players_count < 5:
         bot.send_message(chat_id, "Добавляю ботов...")
 
@@ -294,7 +298,6 @@ def game_start(message: types.Message):
     mafia_usernames = db.get_mafia_usernames(chat_id)
     
     for player_id, _, role in players_roles:
-
         if player_id >= 5:
             try:
                 bot.send_message(player_id, f"Ваша роль: {role}")
@@ -303,6 +306,7 @@ def game_start(message: types.Message):
                     bot.send_message(player_id, f"Мафия: {mafia_usernames}")
 
                 print(f"[ROLE] User {player_id} is {role}")
+                
             except:
                 bot.send_message(chat_id, f"Откройте ЛС с ботом для получения роли! (@{bot.get_me().username})")
 
@@ -312,6 +316,5 @@ def game_start(message: types.Message):
     update_game_state(chat_id, "timer", t)
 
     t.start()
-
 
 bot.polling(non_stop=True)
