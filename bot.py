@@ -5,13 +5,14 @@ from threading import Timer
 import db
 from os import getenv
 from pathlib import Path
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent
 PICTURE_DIR = BASE_DIR / "pictures"
 
 db.init_db()
 
-TOKEN = getenv("TOKEN")
+TOKEN = getenv("BOT_TOKEN")
 bot = TeleBot(TOKEN)
 
 games = {}
